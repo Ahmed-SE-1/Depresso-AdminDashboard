@@ -2,23 +2,23 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff } from "lucide-react"; // Icons import hain
+import { Eye, EyeOff, Loader2 } from "lucide-react"; // Loader icon import kiya
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false); // Naya loader state
   const router = useRouter();
 
   useEffect(() => {
     const token = localStorage.getItem("token");
-    if (token) {
-      router.push("/dashboard");
-    }
+    if (token) router.push("/dashboard");
   }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true); // Loader start
     try {
       const res = await axios.post(`${process.env.NEXT_PUBLIC_STRAPI_URL}/api/auth/local`, {
         identifier: email,
@@ -28,6 +28,7 @@ export default function LoginPage() {
       router.push("/dashboard");
     } catch (err) {
       alert("Invalid credentials! Please try again.");
+      setIsSubmitting(false); // Error par loader band
     }
   };
 
@@ -46,7 +47,6 @@ export default function LoginPage() {
           onChange={(e) => setEmail(e.target.value)}
         />
 
-        {/* Password Input with Icons */}
         <div className="relative mb-6">
           <input
             type={showPassword ? "text" : "password"}
@@ -57,16 +57,25 @@ export default function LoginPage() {
           />
           <button
             type="button"
-            className="absolute right-3 top-3.5 text-gray-400 hover:text-blue-600 transition-colors"
+            className="absolute right-3 top-3.5 text-gray-400 hover:text-blue-600"
             onClick={() => setShowPassword(!showPassword)}
           >
-            {/* Yahan ho raha hai icons ka asli use */}
             {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
           </button>
         </div>
 
-        <button className="w-full bg-black text-white p-3 rounded-lg font-bold hover:bg-gray-800 transition">
-          Login
+        <button 
+          disabled={isSubmitting} // Login ke waqt button disable
+          className="w-full bg-black text-white p-3 rounded-lg font-bold hover:bg-gray-800 transition flex items-center justify-center gap-2"
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="animate-spin" size={20} />
+              Logging in...
+            </>
+          ) : (
+            "Login"
+          )}
         </button>
       </form>
     </div>
