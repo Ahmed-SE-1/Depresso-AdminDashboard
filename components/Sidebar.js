@@ -1,6 +1,8 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { supabase } from "@/lib/supabase"; // Supabase Import
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -10,6 +12,8 @@ import {
   History,
   LogOut,
   Coffee,
+  Menu,
+  X
 } from "lucide-react";
 
 const menuItems = [
@@ -23,14 +27,30 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const [isOpen, setIsOpen] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("token");
+  const handleLogout = async () => {
+    // Supabase secure logout
+    await supabase.auth.signOut();
     window.location.href = "/login";
   };
 
   return (
     <>
+      {/* Mobile Toggle Button */}
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="md:hidden fixed top-4 right-4 z-[60] bg-[#1a0f0a] text-[#c8834a] p-3 rounded-xl shadow-xl border border-white/10 active:scale-95 transition-all"
+      >
+        {isOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      {/* Mobile Overlay/Backdrop */}
+      <div 
+        onClick={() => setIsOpen(false)}
+        className={`md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[45] transition-opacity duration-300 ${isOpen ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+      />
+
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&display=swap');
 
@@ -42,7 +62,7 @@ export default function Sidebar() {
           --muted:    rgba(245, 240, 232, 0.45);
           --border:   rgba(245, 240, 232, 0.1);
 
-          width: 210px;
+          width: 256px; /* FIXED: Updated to 256px to match md:ml-64 in pages */
           background: var(--espresso);
           height: 100vh;
           display: flex;
@@ -51,7 +71,18 @@ export default function Sidebar() {
           left: 0; top: 0;
           font-family: 'DM Sans', sans-serif;
           border-right: 1px solid var(--border);
-          z-index: 40;
+          z-index: 50;
+          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Mobile Responsive Hide/Show */
+        @media (max-width: 767px) {
+          .dh-sidebar {
+            transform: translateX(-100%);
+          }
+          .dh-sidebar.open {
+            transform: translateX(0);
+          }
         }
 
         /* Brand */
@@ -96,11 +127,15 @@ export default function Sidebar() {
           overflow-y: auto;
         }
 
+        /* Custom Scrollbar for Nav */
+        .dh-nav::-webkit-scrollbar { width: 4px; }
+        .dh-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
         .dh-nav-item {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 10px 12px;
+          padding: 12px;
           border-radius: 11px;
           font-size: 13px;
           font-weight: 500;
@@ -130,19 +165,19 @@ export default function Sidebar() {
           letter-spacing: 0.12em;
           text-transform: uppercase;
           color: rgba(245,240,232,0.25);
-          padding: 14px 12px 6px;
+          padding: 16px 12px 6px;
         }
 
         /* Bottom */
         .dh-sidebar-footer {
-          padding: 12px;
+          padding: 16px 12px;
           border-top: 1px solid var(--border);
         }
         .dh-logout-btn {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 10px 12px;
+          padding: 12px;
           width: 100%;
           background: transparent;
           border: none;
@@ -150,7 +185,7 @@ export default function Sidebar() {
           font-family: 'DM Sans', sans-serif;
           font-size: 13px;
           font-weight: 500;
-          color: rgba(220, 100, 80, 0.7);
+          color: rgba(220, 100, 80, 0.8);
           cursor: pointer;
           transition: background 0.18s, color 0.18s;
         }
@@ -160,7 +195,7 @@ export default function Sidebar() {
         }
       `}</style>
 
-      <aside className="dh-sidebar">
+      <aside className={`dh-sidebar ${isOpen ? "open" : ""}`}>
         {/* Brand */}
         <div className="dh-brand">
           <div className="dh-brand-icon">
@@ -168,7 +203,7 @@ export default function Sidebar() {
           </div>
           <div>
             <div className="dh-brand-name">Depresso</div>
-            <div className="dh-brand-sub">Admin</div>
+            <div className="dh-brand-sub">Admin Dashboard</div>
           </div>
         </div>
 
@@ -179,8 +214,13 @@ export default function Sidebar() {
             const Icon = item.icon;
             const isActive = pathname === item.path;
             return (
-              <Link key={item.path} href={item.path} className={`dh-nav-item ${isActive ? "active" : ""}`}>
-                <Icon size={16} />
+              <Link 
+                key={item.path} 
+                href={item.path} 
+                onClick={() => setIsOpen(false)} // Mobile auto close
+                className={`dh-nav-item ${isActive ? "active" : ""}`}
+              >
+                <Icon size={18} />
                 {item.name}
               </Link>
             );
@@ -191,8 +231,13 @@ export default function Sidebar() {
             const Icon = item.icon;
             const isActive = pathname === item.path;
             return (
-              <Link key={item.path} href={item.path} className={`dh-nav-item ${isActive ? "active" : ""}`}>
-                <Icon size={16} />
+              <Link 
+                key={item.path} 
+                href={item.path} 
+                onClick={() => setIsOpen(false)}
+                className={`dh-nav-item ${isActive ? "active" : ""}`}
+              >
+                <Icon size={18} />
                 {item.name}
               </Link>
             );
@@ -203,8 +248,13 @@ export default function Sidebar() {
             const Icon = item.icon;
             const isActive = pathname === item.path;
             return (
-              <Link key={item.path} href={item.path} className={`dh-nav-item ${isActive ? "active" : ""}`}>
-                <Icon size={16} />
+              <Link 
+                key={item.path} 
+                href={item.path} 
+                onClick={() => setIsOpen(false)}
+                className={`dh-nav-item ${isActive ? "active" : ""}`}
+              >
+                <Icon size={18} />
                 {item.name}
               </Link>
             );
@@ -214,7 +264,7 @@ export default function Sidebar() {
         {/* Footer */}
         <div className="dh-sidebar-footer">
           <button className="dh-logout-btn" onClick={handleLogout}>
-            <LogOut size={16} />
+            <LogOut size={18} />
             Logout
           </button>
         </div>

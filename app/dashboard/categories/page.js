@@ -1,8 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
-import axios from "axios";
 import Navbar from "@/components/Sidebar";
 import { Plus, Trash2, Tag, Pencil, X } from "lucide-react";
+import { supabase } from "@/lib/supabase"; // Supabase Import
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([]);
@@ -10,11 +10,11 @@ export default function CategoriesPage() {
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: "", description: "" });
 
-  // Pagination States
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
-  const API_URL = process.env.NEXT_PUBLIC_STRAPI_URL;
+  // NEW: Loading State
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -22,23 +22,23 @@ export default function CategoriesPage() {
 
   const fetchCategories = async () => {
     try {
-      const token = localStorage.getItem("token");
-      // FIX: Added limit=200 and descending sort to show newest first
-      const res = await axios.get(`${API_URL}/api/categories?populate=products&pagination[limit]=200&sort=createdAt:desc`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setCategories(res.data?.data || res.data || []);
+      const { data, error } = await supabase
+        .from('categories')
+        .select('*, products(id)')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setCategories(data || []);
     } catch (err) {
       console.error("Fetch categories error:", err);
     }
   };
 
   const handleEdit = (cat) => {
-    const data = cat?.attributes || cat;
-    setEditingId(cat.documentId || cat.id);
+    setEditingId(cat.id);
     setFormData({
-      name: data?.Name || "",
-      description: data?.Description || "",
+      name: cat.name || "",
+      description: cat.description || "",
     });
     setIsModalOpen(true);
   };
@@ -46,16 +46,12 @@ export default function CategoriesPage() {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this category?")) return;
     try {
-      const token = localStorage.getItem("token");
-      await axios.delete(`${API_URL}/api/categories/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const { error } = await supabase.from('categories').delete().eq('id', id);
+      if (error) throw error;
       
-      // Agar delete hone pe current page khali ho jaye, to pichle page pe le jao
       if (paginatedCategories.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1);
       }
-      
       fetchCategories();
     } catch (err) {
       alert("Error deleting category. It might be linked to products.");
@@ -64,20 +60,20 @@ export default function CategoriesPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setIsSubmitting(true); // START LOADER
     try {
-      const token = localStorage.getItem("token");
-      const payload = { data: { Name: formData.name, Description: formData.description } };
+      const payload = { 
+        name: formData.name, 
+        description: formData.description 
+      };
 
-      // FIX: Added ?status=published to ensure it stays visible if Draft/Publish is enabled
       if (editingId) {
-        await axios.put(`${API_URL}/api/categories/${editingId}?status=published`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const { error } = await supabase.from('categories').update(payload).eq('id', editingId);
+        if (error) throw error;
       } else {
-        await axios.post(`${API_URL}/api/categories?status=published`, payload, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setCurrentPage(1); // Nayi category hamesha page 1 par top pe aayegi
+        const { error } = await supabase.from('categories').insert([payload]);
+        if (error) throw error;
+        setCurrentPage(1);
       }
       
       setIsModalOpen(false);
@@ -85,142 +81,99 @@ export default function CategoriesPage() {
       setFormData({ name: "", description: "" });
       fetchCategories();
     } catch (err) {
-      alert("Error saving category: " + (err.response?.data?.error?.message || err.message));
+      alert("Error saving category: " + err.message);
+    } finally {
+      setIsSubmitting(false); // STOP LOADER
     }
   };
 
-  // --- Statistics Logic (Full Array pe base karegi) ---
-  const totalProducts = categories.reduce((acc, cat) => {
-    const data = cat?.attributes || cat;
-    const productsArray = data?.products?.data || data?.products || [];
-    return acc + productsArray.length;
-  }, 0);
+  const totalProducts = categories.reduce((acc, cat) => acc + (cat.products?.length || 0), 0);
+  const emptyCategories = categories.filter(cat => !cat.products || cat.products.length === 0).length;
 
-  const emptyCategories = categories.filter(cat => {
-    const data = cat?.attributes || cat;
-    const productsArray = data?.products?.data || data?.products || [];
-    return productsArray.length === 0;
-  }).length;
-
-  // --- Pagination Logic ---
   const totalPages = Math.ceil(categories.length / itemsPerPage);
-  const paginatedCategories = categories.slice(
-    (currentPage - 1) * itemsPerPage, 
-    currentPage * itemsPerPage
-  );
+  const paginatedCategories = categories.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
-    <div style={{ background: "#fdfaf5", minHeight: "100vh" }}>
+    <div className="bg-[#fdfaf5] min-h-screen font-sans">
       <Navbar />
-      <div style={{ marginLeft: "280px", padding: "40px" }}>
+      <div className="p-4 md:p-10 ml-0 md:ml-[280px] transition-all">
         
         {/* Header */}
-        <div style={{ marginBottom: "30px" }}>
-          <p style={{ color: "#c8834a", fontSize: "12px", fontWeight: "700", letterSpacing: "1.5px", textTransform: "uppercase", marginBottom: "8px" }}>Organisation</p>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h1 style={{ fontFamily: "serif", fontSize: "36px", color: "#1a0f0a", margin: 0 }}>Categories</h1>
-            <button onClick={() => { setEditingId(null); setFormData({ name: "", description: "" }); setIsModalOpen(true); }} style={{ background: "#1a0f0a", color: "white", padding: "12px 24px", borderRadius: "10px", display: "flex", alignItems: "center", gap: "8px", fontWeight: "600", border: "none", cursor: "pointer" }}>
+        <div className="mb-8">
+          <p className="text-[#c8834a] text-xs font-bold tracking-[1.5px] uppercase mb-2">Organisation</p>
+          <div className="flex flex-col md:flex-row justify-between md:items-center gap-4">
+            <h1 className="font-serif text-3xl md:text-4xl text-[#1a0f0a] m-0">Categories</h1>
+            <button 
+              onClick={() => { setEditingId(null); setFormData({ name: "", description: "" }); setIsModalOpen(true); }} 
+              className="bg-[#1a0f0a] text-white px-6 py-3 rounded-xl flex items-center justify-center gap-2 font-semibold hover:bg-gray-800 transition"
+            >
               <Plus size={18} /> New Category
             </button>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "25px", marginBottom: "40px" }}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 mb-10">
           {[
             { label: "Total Categories", value: categories.length },
             { label: "Total Products", value: totalProducts },
             { label: "Empty Categories", value: emptyCategories }
           ].map((stat, i) => (
-            <div key={i} style={{ background: "white", padding: "30px", borderRadius: "20px", border: "1px solid #e8e0d0" }}>
-              <p style={{ margin: 0, fontSize: "11px", fontWeight: "700", color: "#a0958a", textTransform: "uppercase" }}>{stat.label}</p>
-              <h2 style={{ margin: "10px 0 0", fontSize: "42px", fontFamily: "serif", color: "#1a0f0a" }}>{stat.value}</h2>
+            <div key={i} className="bg-white p-6 rounded-2xl border border-[#e8e0d0] shadow-sm">
+              <p className="m-0 text-xs font-bold text-[#a0958a] uppercase">{stat.label}</p>
+              <h2 className="mt-2 text-4xl font-serif text-[#1a0f0a]">{stat.value}</h2>
             </div>
           ))}
         </div>
 
-        {/* Table & Pagination Container */}
-        <div style={{ background: "white", borderRadius: "15px", border: "1px solid #e8e0d0", overflow: "hidden" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead style={{ background: "#f8f5f0", borderBottom: "1px solid #e8e0d0", textAlign: "left" }}>
-              <tr style={{ fontSize: "12px", color: "#a0958a", textTransform: "uppercase" }}>
-                <th style={{ padding: "20px" }}>Name</th>
-                <th>Description</th>
-                <th style={{ textAlign: "center" }}>Linked Products</th>
-                <th style={{ textAlign: "right", paddingRight: "20px" }}>Actions</th>
+        {/* Table Container */}
+        <div className="bg-white rounded-2xl border border-[#e8e0d0] overflow-x-auto shadow-sm">
+          <table className="w-full border-collapse min-w-[600px]">
+            <thead className="bg-[#f8f5f0] border-b border-[#e8e0d0] text-left">
+              <tr className="text-xs text-[#a0958a] uppercase tracking-wider">
+                <th className="p-5 font-semibold">Name</th>
+                <th className="p-5 font-semibold">Description</th>
+                <th className="p-5 text-center font-semibold">Linked Products</th>
+                <th className="p-5 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {paginatedCategories.map((cat) => {
-                const data = cat?.attributes || cat;
-                const productsArray = data?.products?.data || data?.products || [];
-                const catId = cat.documentId || cat.id;
-
-                return (
-                  <tr key={catId} style={{ borderBottom: "1px solid #f0ede8", color: "#1a0f0a" }}>
-                    <td style={{ padding: "20px", fontWeight: "700", display: "flex", alignItems: "center", gap: "12px" }}>
-                      <div style={{ background: "#f8f5f0", padding: "8px", borderRadius: "8px" }}>
-                        <Tag size={16} color="#c8834a" />
-                      </div>
-                      {data?.Name || "Unnamed Category"}
-                    </td>
-                    <td style={{ color: "#a0958a" }}>{data?.Description || "—"}</td>
-                    <td style={{ textAlign: "center" }}>
-                      <span style={{ background: "#fdfaf5", color: "#c8834a", padding: "4px 12px", borderRadius: "20px", fontSize: "12px", fontWeight: "700", border: "1px solid #e8e0d0" }}>
-                        {productsArray.length} items
-                      </span>
-                    </td>
-                    <td style={{ textAlign: "right", paddingRight: "20px" }}>
-                      <button onClick={() => handleEdit(cat)} style={{ background: "none", border: "none", color: "#a0958a", cursor: "pointer", marginRight: "10px" }}><Pencil size={18} /></button>
-                      <button onClick={() => handleDelete(catId)} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer" }}><Trash2 size={18} /></button>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {/* No Categories Fallback */}
-              {paginatedCategories.length === 0 && (
-                <tr>
-                  <td colSpan="4" style={{ textAlign: "center", padding: "40px", color: "#a0958a" }}>
-                    No categories found.
+              {paginatedCategories.map((cat) => (
+                <tr key={cat.id} className="border-b border-[#f0ede8] text-[#1a0f0a] hover:bg-gray-50">
+                  <td className="p-5 font-bold flex items-center gap-3">
+                    <div className="bg-[#f8f5f0] p-2 rounded-lg"><Tag size={16} color="#c8834a" /></div>
+                    {cat.name}
+                  </td>
+                  <td className="p-5 text-[#a0958a]">{cat.description || "—"}</td>
+                  <td className="p-5 text-center">
+                    <span className="bg-[#fdfaf5] text-[#c8834a] px-3 py-1 rounded-full text-xs font-bold border border-[#e8e0d0]">
+                      {cat.products?.length || 0} items
+                    </span>
+                  </td>
+                  <td className="p-5 text-right">
+                    <button onClick={() => handleEdit(cat)} className="text-[#a0958a] hover:text-blue-600 mr-3 transition"><Pencil size={18} /></button>
+                    <button onClick={() => handleDelete(cat.id)} className="text-[#ef4444] hover:text-red-700 transition"><Trash2 size={18} /></button>
                   </td>
                 </tr>
+              ))}
+              {paginatedCategories.length === 0 && (
+                <tr><td colSpan="4" className="text-center p-10 text-[#a0958a]">No categories found.</td></tr>
               )}
             </tbody>
           </table>
 
-          {/* Pagination Controls */}
+          {/* Pagination */}
           {totalPages > 1 && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px", borderTop: "1px solid #e8e0d0" }}>
-              <span style={{ fontSize: "14px", color: "#a0958a", fontWeight: "600" }}>
+            <div className="flex flex-col sm:flex-row justify-between items-center p-5 border-t border-[#e8e0d0] gap-4">
+              <span className="text-sm text-[#a0958a] font-semibold">
                 Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, categories.length)} of {categories.length} entries
               </span>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e8e0d0", background: currentPage === 1 ? "#f8f5f0" : "white", color: currentPage === 1 ? "#d1c7bc" : "#1a0f0a", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontWeight: "600" }}
-                >
-                  Previous
-                </button>
-                
+              <div className="flex gap-2">
+                <button onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} className={`px-3 py-2 rounded-lg border border-[#e8e0d0] font-semibold ${currentPage === 1 ? 'bg-[#f8f5f0] text-[#d1c7bc] cursor-not-allowed' : 'bg-white text-[#1a0f0a] hover:bg-gray-50'}`}>Prev</button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentPage(page)}
-                    style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e8e0d0", background: currentPage === page ? "#1a0f0a" : "white", color: currentPage === page ? "white" : "#1a0f0a", cursor: "pointer", fontWeight: "600" }}
-                  >
-                    {page}
-                  </button>
+                  <button key={page} onClick={() => setCurrentPage(page)} className={`px-4 py-2 rounded-lg border border-[#e8e0d0] font-semibold ${currentPage === page ? 'bg-[#1a0f0a] text-white' : 'bg-white text-[#1a0f0a] hover:bg-gray-50'}`}>{page}</button>
                 ))}
-
-                <button 
-                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #e8e0d0", background: currentPage === totalPages ? "#f8f5f0" : "white", color: currentPage === totalPages ? "#d1c7bc" : "#1a0f0a", cursor: currentPage === totalPages ? "not-allowed" : "pointer", fontWeight: "600" }}
-                >
-                  Next
-                </button>
+                <button onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} className={`px-3 py-2 rounded-lg border border-[#e8e0d0] font-semibold ${currentPage === totalPages ? 'bg-[#f8f5f0] text-[#d1c7bc] cursor-not-allowed' : 'bg-white text-[#1a0f0a] hover:bg-gray-50'}`}>Next</button>
               </div>
             </div>
           )}
@@ -228,22 +181,43 @@ export default function CategoriesPage() {
 
         {/* Modal */}
         {isModalOpen && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" }}>
-            <div style={{ background: "white", padding: "40px", borderRadius: "24px", width: "500px", position: "relative" }}>
-              <button onClick={() => setIsModalOpen(false)} style={{ position: "absolute", right: "20px", top: "20px", background: "#f5f0e8", border: "none", borderRadius: "50%", padding: "5px", cursor: "pointer" }}><X size={18} /></button>
-              <h2 style={{ fontFamily: "serif", fontSize: "28px", color: "#1a0f0a", marginBottom: "30px" }}>{editingId ? "Edit Category" : "New Category"}</h2>
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 backdrop-blur-sm p-4">
+            <div className="bg-white p-6 md:p-10 rounded-3xl w-full max-w-[500px] relative shadow-2xl">
               
-              <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* FIXED: Cross icon turned Red */}
+              <button 
+                onClick={() => setIsModalOpen(false)} 
+                className="absolute right-4 top-4 bg-red-50 p-2 rounded-full text-red-500 hover:bg-red-100 transition-all border border-red-100"
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+
+              <h2 className="font-serif text-2xl md:text-3xl text-[#1a0f0a] mb-6">{editingId ? "Edit Category" : "New Category"}</h2>
+              
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                 <div>
-                  <label style={{ fontSize: "11px", fontWeight: "700", color: "#a0958a", textTransform: "uppercase" }}>Category Name</label>
-                  <input style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #f0ede8", marginTop: "5px", color: "#1a0f0a" }} placeholder="e.g. Hot Drinks" value={formData.name} onChange={e => setFormData({...formData, name:e.target.value})} required />
+                  <label className="text-xs font-bold text-[#a0958a] uppercase">Category Name</label>
+                  <input className="w-full p-3 rounded-xl border border-[#f0ede8] mt-1 text-[#1a0f0a] outline-none focus:border-[#c8834a]" placeholder="e.g. Hot Drinks" value={formData.name} onChange={e => setFormData({...formData, name:e.target.value})} required disabled={isSubmitting} />
                 </div>
                 <div>
-                  <label style={{ fontSize: "11px", fontWeight: "700", color: "#a0958a", textTransform: "uppercase" }}>Description</label>
-                  <textarea style={{ width: "100%", padding: "12px", borderRadius: "10px", border: "1px solid #f0ede8", marginTop: "5px", color: "#1a0f0a", resize: "vertical", minHeight: "80px" }} placeholder="Optional..." value={formData.description} onChange={e => setFormData({...formData, description:e.target.value})} />
+                  <label className="text-xs font-bold text-[#a0958a] uppercase">Description</label>
+                  <textarea className="w-full p-3 rounded-xl border border-[#f0ede8] mt-1 text-[#1a0f0a] outline-none focus:border-[#c8834a] min-h-[80px] resize-y" placeholder="Optional..." value={formData.description} onChange={e => setFormData({...formData, description:e.target.value})} disabled={isSubmitting} />
                 </div>
-                <button type="submit" style={{ background: "#1a0f0a", color: "white", padding: "16px", borderRadius: "12px", border: "none", fontWeight: "700", fontSize: "16px", cursor: "pointer" }}>
-                  Save Category
+
+                {/* UPDATED: Dynamic Button Loader */}
+                <button 
+                  type="submit" 
+                  disabled={isSubmitting}
+                  className={`text-white p-4 rounded-xl font-bold text-lg transition mt-2 flex items-center justify-center gap-2 ${isSubmitting ? 'bg-gray-500 cursor-not-allowed opacity-80' : 'bg-[#1a0f0a] hover:bg-gray-800'}`}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
+                      Saving Category...
+                    </>
+                  ) : (
+                    "Save Category"
+                  )}
                 </button>
               </form>
             </div>

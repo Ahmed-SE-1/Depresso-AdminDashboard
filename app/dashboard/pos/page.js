@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import axios from "axios";
 import Sidebar from "@/components/Sidebar";
+import { supabase } from "@/lib/supabase"; // Supabase Import
 import { Search, ShoppingCart, Trash2, Loader2 } from "lucide-react";
 
 export default function POSPage() {
@@ -12,30 +12,24 @@ export default function POSPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_STRAPI_URL;
-
   useEffect(() => { 
     fetchProducts(); 
   }, []);
 
   const fetchProducts = async () => {
     try {
-      const token = localStorage.getItem("token");
-      const res = await axios.get(`${API_URL}/api/products?pagination[limit]=200&status=published`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProducts(res.data?.data || []);
+      const { data, error } = await supabase.from('products').select('*');
+      if (error) throw error;
+      setProducts(data || []);
     } catch (err) { 
       console.error("Error fetching products", err); 
     }
   };
 
   const addToCart = (product) => {
-    const data = product.attributes || product;
-    
-    const productName = data?.Name || data?.name;
-    const productPrice = Number(data?.Price || data?.price) || 0;
-    const productStock = Number(data?.Stock || data?.stock) || 0;
+    const productName = product.name;
+    const productPrice = Number(product.price) || 0;
+    const productStock = Number(product.stock) || 0;
 
     if (!productName || productStock <= 0) return;
     
@@ -55,55 +49,43 @@ export default function POSPage() {
   const handleCheckout = async () => {
     if (cart.length === 0) return alert("Cart is empty!");
     setIsProcessing(true);
+    
     try {
-      const token = localStorage.getItem("token");
       const invoiceId = `INV-${Date.now().toString().slice(-6)}`;
       
-      const orderItemsString = cart.map((item) => `${item.name} (x${item.qty}) - Rs. ${item.price * item.qty}`).join("\n");
-
-      const itemsBlocksFormat = [
-        {
-          type: "paragraph",
-          children: [
-            {
-              type: "text",
-              text: orderItemsString
-            }
-          ]
-        }
-      ];
+      // Items ko properly string array mein convert kiya
+      const itemsToSave = cart.map((item) => `${item.name} (x${item.qty}) - Rs. ${item.price * item.qty}`);
 
       const payload = {
-        data: {
-          Invoice_ID: invoiceId,
-          Total_Amount: Number(total),
-          Payment_Method: paymentMethod,
-          Items: itemsBlocksFormat, 
-          Date: new Date().toISOString(), 
-        },
+        invoice_id: invoiceId,
+        total_amount: Number(total),
+        payment_method: paymentMethod,
+        items: itemsToSave, 
+        date: new Date().toISOString(), 
       };
       
-      await axios.post(`${API_URL}/api/sales`, payload, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const { error } = await supabase.from('sales').insert([payload]);
+      if (error) throw error;
       
       setReceiptData({
         invoiceId,
         date: new Date().toLocaleString(),
         items: [...cart],
         total: total,
-        paymentMethod: paymentMethod // Added to receipt
+        paymentMethod: paymentMethod
       });
+
+      // Stock deduction logic can be added here if needed in future
 
       setTimeout(() => {
         window.print();
         setCart([]); 
         fetchProducts(); 
-        setPaymentMethod("Cash"); // Reset after checkout
+        setPaymentMethod("Cash");
       }, 300);
 
     } catch (err) {
-      console.error(err.response?.data || err);
+      console.error(err);
       alert("❌ Error saving sale. Check console for details.");
     } finally {
       setIsProcessing(false);
@@ -111,49 +93,50 @@ export default function POSPage() {
   };
 
   const filteredProducts = products.filter((p) => {
-    const data = p.attributes || p;
-    const name = (data?.Name || data?.name || "").toLowerCase();
-    const s = search.toLowerCase();
-    return name.includes(s);
+    const name = (p.name || "").toLowerCase();
+    return name.includes(search.toLowerCase());
   });
 
   return (
     <>
       <div className="flex min-h-screen bg-[#fcfaf8] print:hidden">
         <Sidebar />
-        <main className="flex-1 ml-64 p-8 flex flex-col h-screen overflow-hidden">
-          <header className="mb-6">
+        <main className="flex-1 ml-0 md:ml-64 p-4 md:p-8 flex flex-col h-screen overflow-hidden transition-all">
+          
+          <header className="mb-4 md:mb-6 flex-shrink-0">
             <p className="text-[10px] uppercase tracking-[0.2em] text-[#8d7b68] font-bold mb-1">Point of Sale</p>
-            <h1 className="text-3xl font-serif text-[#2d241e]">Create New Order</h1>
+            <h1 className="text-2xl md:text-3xl font-serif text-[#2d241e]">Create New Order</h1>
           </header>
 
-          <div className="flex gap-6 flex-1 overflow-hidden">
-            {/* Products Grid */}
-            <div className="flex-[1.5] bg-white rounded-[32px] border border-[#f1ede9] p-6 flex flex-col shadow-sm">
-              <div className="relative mb-6">
+          <div className="flex flex-col lg:flex-row gap-4 md:gap-6 flex-1 overflow-hidden">
+            
+            {/* Products Area */}
+            <div className="flex-[1.5] bg-white rounded-[24px] md:rounded-[32px] border border-[#f1ede9] p-4 md:p-6 flex flex-col shadow-sm max-h-[50vh] lg:max-h-full">
+              <div className="relative mb-4 md:mb-6 flex-shrink-0">
                 <input 
+                  type="text"
                   placeholder="Search coffee or snacks..." 
-                  className="w-full p-4 pl-12 bg-[#fcfaf8] text-[#1a0f0a] placeholder:text-[#a89a8e] rounded-2xl border-none outline-none focus:ring-1 focus:ring-[#3d2b1f] text-sm"
-                  value={search} onChange={(e) => setSearch(e.target.value)}
+                  className="w-full p-3 pl-11 md:p-4 md:pl-12 bg-[#fcfaf8] text-[#1a0f0a] placeholder:text-[#a89a8e] rounded-2xl border-none outline-none focus:ring-1 focus:ring-[#3d2b1f] text-sm shadow-sm transition-all"
+                  value={search} 
+                  onChange={(e) => setSearch(e.target.value)}
                 />
-                <Search className="absolute left-4 top-4 text-[#a89a8e]" size={18} />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a89a8e]" size={16} />
               </div>
 
-              <div className="grid grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto pr-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 md:gap-4 overflow-y-auto pr-2 custom-scrollbar">
                 {filteredProducts.map(p => {
-                  const d = p.attributes || p;
-                  const pName = d?.Name || d?.name || "Unnamed Item";
-                  const pPrice = d?.Price || d?.price || 0;
-                  const pSku = d?.SKU || d?.sku || 'N/A';
-                  const pStock = d?.Stock || d?.stock || 0;
+                  const pName = p.name || "Unnamed Item";
+                  const pPrice = p.price || 0;
+                  const pSku = p.sku || 'N/A';
+                  const pStock = p.stock || 0;
 
                   return (
-                    <button key={p.id} onClick={() => addToCart(p)} className="p-5 border border-[#f8f5f2] rounded-[24px] hover:bg-[#3d2b1f] hover:text-white transition-all text-left active:scale-95 group">
+                    <button key={p.id} onClick={() => addToCart(p)} className="p-4 md:p-5 border border-[#f8f5f2] rounded-[20px] md:rounded-[24px] hover:bg-[#3d2b1f] hover:text-white transition-all text-left active:scale-95 group">
                       <h3 className="font-bold text-[#2d241e] group-hover:text-white truncate">{pName}</h3>
-                      <p className="text-xs text-[#8d7b68] group-hover:text-[#a89a8e] mb-4">Rs. {pPrice}</p>
-                      <div className="flex justify-between items-center opacity-50 group-hover:opacity-100 text-[9px] font-bold uppercase tracking-tighter">
+                      <p className="text-xs text-[#8d7b68] group-hover:text-[#a89a8e] mb-3 md:mb-4">Rs. {pPrice}</p>
+                      <div className="flex justify-between items-center opacity-70 group-hover:opacity-100 text-[9px] font-bold uppercase tracking-tighter">
                         <span>SKU: {pSku}</span>
-                        <span className={pStock < 5 ? 'text-red-400' : 'text-green-500'}>Stock: {pStock}</span>
+                        <span className={pStock < 5 ? 'text-red-500' : 'text-green-500'}>Stock: {pStock}</span>
                       </div>
                     </button>
                   )
@@ -167,23 +150,23 @@ export default function POSPage() {
               </div>
             </div>
 
-            {/* Checkout Cart */}
-            <div className="flex-1 bg-[#1e1915] rounded-[32px] p-8 text-white flex flex-col shadow-2xl">
-              <div className="flex items-center gap-3 mb-8 border-b border-white/10 pb-4">
+            {/* Checkout Cart Area */}
+            <div className="flex-1 bg-[#1e1915] rounded-[24px] md:rounded-[32px] p-4 md:p-8 text-white flex flex-col shadow-2xl max-h-[50vh] lg:max-h-full">
+              <div className="flex items-center gap-3 mb-4 md:mb-8 border-b border-white/10 pb-4 flex-shrink-0">
                 <ShoppingCart size={20} className="text-[#d4a373]" />
-                <h2 className="text-xl font-serif">Order Summary</h2>
+                <h2 className="text-lg md:text-xl font-serif">Order Summary</h2>
               </div>
               
-              <div className="flex-1 overflow-y-auto space-y-6 pr-2 custom-scrollbar">
+              <div className="flex-1 overflow-y-auto space-y-4 md:space-y-6 pr-2 custom-scrollbar">
                 {cart.map(item => (
                   <div key={item.id} className="flex justify-between items-center">
                     <div className="flex-1">
                       <p className="text-sm font-bold">{item.name}</p>
                       <p className="text-[10px] text-[#8d7b68]">Rs. {item.price} x {item.qty}</p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3 md:gap-4">
                       <span className="font-serif text-sm">Rs.{item.price * item.qty}</span>
-                      <button onClick={() => removeFromCart(item.id)} className="text-white/20 hover:text-red-400 transition-colors"><Trash2 size={14}/></button>
+                      <button onClick={() => removeFromCart(item.id)} className="text-white/20 hover:text-red-400 transition-colors p-1"><Trash2 size={16}/></button>
                     </div>
                   </div>
                 ))}
@@ -195,17 +178,15 @@ export default function POSPage() {
                 )}
               </div>
 
-              <div className="mt-6 pt-6 border-t border-white/10">
-                
-                {/* PAYMENT METHOD SELECTION UI */}
-                <div className="mb-6">
-                  <p className="text-[10px] uppercase tracking-widest text-[#8d7b68] font-bold mb-3">Payment Method</p>
+              <div className="mt-4 md:mt-6 pt-4 md:pt-6 border-t border-white/10 flex-shrink-0">
+                <div className="mb-4 md:mb-6">
+                  <p className="text-[10px] uppercase tracking-widest text-[#8d7b68] font-bold mb-2 md:mb-3">Payment Method</p>
                   <div className="flex gap-2">
                     {["Cash", "Card", "Online"].map((method) => (
                       <button
                         key={method}
                         onClick={() => setPaymentMethod(method)}
-                        className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${
+                        className={`flex-1 py-2 md:py-3 text-xs font-bold rounded-xl transition-all ${
                           paymentMethod === method 
                             ? "bg-[#d4a373] text-[#1e1915]" 
                             : "bg-white/5 text-[#8d7b68] hover:bg-white/10"
@@ -217,19 +198,20 @@ export default function POSPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-between items-end mb-8">
+                <div className="flex justify-between items-end mb-4 md:mb-6">
                   <span className="text-[10px] uppercase tracking-widest text-[#8d7b68] font-bold">Total</span>
-                  <span className="text-4xl font-serif">Rs. {total}</span>
+                  <span className="text-3xl md:text-4xl font-serif">Rs. {total}</span>
                 </div>
                 <button 
                   onClick={handleCheckout}
                   disabled={isProcessing || cart.length === 0}
-                  className="w-full bg-[#d4a373] text-[#1e1915] py-5 rounded-2xl font-black text-sm tracking-widest hover:bg-white transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-[#d4a373] text-[#1e1915] py-4 md:py-5 rounded-2xl font-black text-sm tracking-widest hover:bg-white transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isProcessing ? <Loader2 className="animate-spin" /> : "FINALIZE BILL"}
                 </button>
               </div>
             </div>
+
           </div>
         </main>
       </div>

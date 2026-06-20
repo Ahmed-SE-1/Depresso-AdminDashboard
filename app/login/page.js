@@ -1,34 +1,44 @@
 "use client";
 import { useState, useEffect } from "react";
-import axios from "axios";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Loader2 } from "lucide-react"; // Loader icon import kiya
+import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { supabase } from "@/lib/supabase"; // Supabase client import kiya hai
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false); // Naya loader state
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
+  // Check if user is already logged in
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) router.push("/dashboard");
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.push("/dashboard");
+      }
+    };
+    checkUser();
   }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setIsSubmitting(true); // Loader start
-    try {
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_STRAPI_URL}/api/auth/local`, {
-        identifier: email,
-        password: password,
-      });
-      localStorage.setItem("token", res.data.jwt);
+    setIsSubmitting(true);
+    
+    // Supabase Login Logic
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (error) {
+      alert(error.message || "Invalid credentials! Please try again.");
+      setIsSubmitting(false);
+    } else {
+      // Login successful, redirect to dashboard
+      // Supabase khud automatically token browser mein save kar leta hai
       router.push("/dashboard");
-    } catch (err) {
-      alert("Invalid credentials! Please try again.");
-      setIsSubmitting(false); // Error par loader band
     }
   };
 
@@ -37,7 +47,7 @@ export default function LoginPage() {
       <form onSubmit={handleLogin} className="bg-white p-8 rounded-2xl shadow-xl w-96 text-center">
         <div className="text-3xl text-blue-700 font-bold mb-2">DH</div>
         <h2 className="text-xl text-blue-700 font-semibold">Depresso Haus Store</h2>
-        <p className="text-gray-500 text-sm mb-6">Powered by Depresso Haus</p>
+        <p className="text-gray-500 text-sm mb-6">Powered by Supabase</p> {/* Yahan Supabase likh diya :) */}
 
         <input
           type="email"
@@ -65,7 +75,7 @@ export default function LoginPage() {
         </div>
 
         <button 
-          disabled={isSubmitting} // Login ke waqt button disable
+          disabled={isSubmitting}
           className="w-full bg-black text-white p-3 rounded-lg font-bold hover:bg-gray-800 transition flex items-center justify-center gap-2"
         >
           {isSubmitting ? (
