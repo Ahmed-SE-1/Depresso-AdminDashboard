@@ -221,7 +221,7 @@ export default function POSPage() {
         <div className="hidden print:block w-full max-w-[80mm] mx-auto text-black bg-white p-4 font-mono text-sm">
           <div className="text-center mb-6">
             <h2 className="font-bold text-2xl mb-1">Depresso Haus</h2>
-            <p className="text-xs text-gray-600">Multan, Pakistan</p>
+            <p className="text-xs text-gray-600">Lahore, Pakistan</p>
             <p className="text-xs text-gray-600 mt-2">Invoice: {receiptData.invoiceId}</p>
             <p className="text-xs text-gray-600">{receiptData.date}</p>
           </div>
@@ -252,6 +252,8 @@ export default function POSPage() {
           <div className="text-center text-xs mt-8">
             <p className="mb-1">Thank you for your visit!</p>
             <p>Please come again</p>
+            <p>I am here,</p>
+            <p>To make your work more lighter.</p>
           </div>
         </div>
       )}

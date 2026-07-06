@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect } from "react";
 import Sidebar from "@/components/Sidebar";
-import { Plus, UserX, Phone, Loader2, Edit, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, UserX, Phone, Loader2, Edit, ChevronLeft, ChevronRight, QrCode, X, Download } from "lucide-react";
+import { QRCodeCanvas } from "qrcode.react";
 import { supabase } from "@/lib/supabase"; // Supabase Import
 
 export default function WorkersPage() {
@@ -11,7 +12,10 @@ export default function WorkersPage() {
   const [formData, setFormData] = useState({ name: "", role: "Cashier", phone: "", salary: "" });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  
+
+  // QR Modal state
+  const [qrWorker, setQrWorker] = useState(null);
+
   const [currentPage, setCurrentPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
   const pageSize = 10; 
@@ -97,7 +101,6 @@ export default function WorkersPage() {
       const { error } = await supabase.from('workers').delete().eq('id', id);
       if (error) throw error;
       
-      // Agar delete hone pe current page khali ho jaye
       if (workers.length === 1 && currentPage > 1) {
         setCurrentPage(currentPage - 1);
       } else {
@@ -108,9 +111,32 @@ export default function WorkersPage() {
     }
   };
 
+  // FIXED: Converted multi-line text to clean, structured JSON to fix 'No data found' errors across all scanner apps.
+  const getQRData = (w) => {
+    if (!w) return "";
+    return JSON.stringify({
+      id: w.id,
+      name: w.name,
+      role: w.role,
+      phone: w.phone,
+      salary: `Rs. ${Number(w.salary || 0).toLocaleString()}`
+    });
+  };
+
+  const downloadQR = (w) => {
+    const canvas = document.getElementById("worker-qr-canvas");
+    if (!canvas) return;
+    const url = canvas.toDataURL("image/png");
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${(w.name || "worker").replace(/\s+/g, "_")}_QR.png`;
+    link.click();
+  };
+
   const roleStyles = {
     Manager: "bg-amber-100 text-amber-900",
     Cashier: "bg-emerald-100 text-emerald-900",
+    Barista: "bg-sky-100 text-sky-900",
     "Stock Keeper": "bg-blue-100 text-blue-900",
   };
 
@@ -168,6 +194,7 @@ export default function WorkersPage() {
                     </td>
                     <td className="px-6 md:px-8 py-6 text-right">
                       <div className="flex justify-end gap-2 opacity-100 md:opacity-60 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => setQrWorker(w)} className="p-2 text-[#8d7b68] hover:text-emerald-600 hover:bg-emerald-50 rounded-xl transition-all" title="View QR Code"><QrCode size={18} /></button>
                         <button onClick={() => openEditModal(w)} className="p-2 text-[#8d7b68] hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all" title="Edit Worker"><Edit size={18} /></button>
                         <button onClick={() => deleteWorker(w.id)} className="p-2 text-[#8d7b68] hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Remove Worker"><UserX size={18} /></button>
                       </div>
@@ -192,7 +219,7 @@ export default function WorkersPage() {
         )}
       </main>
 
-      {/* Modal Container */}
+      {/* Add / Edit Worker Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-[#1e1915]/60 backdrop-blur-md flex items-center justify-center p-4 z-[100]">
           <form onSubmit={handleSubmit} className="bg-white p-6 md:p-10 rounded-[32px] md:rounded-[40px] w-full max-w-md shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
@@ -211,6 +238,7 @@ export default function WorkersPage() {
                 <select value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })} className="w-full p-3 md:p-4 bg-[#fcfaf8] text-[#1a0f0a] rounded-2xl border-2 border-transparent outline-none focus:border-[#d4a373] transition-all text-sm font-medium appearance-none">
                   <option value="Cashier">Cashier</option>
                   <option value="Manager">Manager</option>
+                  <option value="Barista">Barista</option>
                   <option value="Stock Keeper">Stock Keeper</option>
                 </select>
               </div>
@@ -233,6 +261,42 @@ export default function WorkersPage() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* QR Code View Modal */}
+      {qrWorker && (
+        <div className="fixed inset-0 bg-[#1e1915]/60 backdrop-blur-md flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white p-6 md:p-8 rounded-[32px] w-full max-w-sm shadow-2xl space-y-5">
+            <div className="flex justify-between items-start">
+              <div>
+                <h3 className="font-serif text-xl text-[#2d241e]">{qrWorker.name}</h3>
+                <span className={`inline-block mt-1 text-[10px] font-black px-3 py-1 rounded-lg uppercase tracking-wider ${roleStyles[qrWorker.role] || 'bg-gray-100 text-gray-800'}`}>
+                  {qrWorker.role}
+                </span>
+              </div>
+              <button onClick={() => setQrWorker(null)} className="p-2 text-[#8d7b68] hover:text-[#2d241e] hover:bg-[#fcfaf8] rounded-xl transition-all">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex justify-center bg-[#fcfaf8] p-6 rounded-2xl">
+              <QRCodeCanvas
+                id="worker-qr-canvas"
+                value={getQRData(qrWorker)}
+                size={200}
+                level="M"
+                includeMargin={true}
+                fgColor="#1e1915"
+              />
+            </div>
+
+            <p className="text-xs text-center text-[#8d7b68]">Scan this code to view {qrWorker.name.split(" ")[0]}'s details</p>
+
+            <button onClick={() => downloadQR(qrWorker)} className="w-full py-3 md:py-4 bg-[#1e1915] text-white rounded-2xl font-bold text-sm hover:bg-[#3d2b1f] transition-all shadow-lg flex items-center justify-center gap-2">
+              <Download size={16} /> Download QR
+            </button>
+          </div>
         </div>
       )}
     </div>
